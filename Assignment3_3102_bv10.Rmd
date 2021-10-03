@@ -1,0 +1,195 @@
+---
+title: "Assignment_3_3102_bv10"
+author: Bhuvaneswari(Bhu) Venkatraman
+netid: bv10
+seedid: 3102
+output:
+  html_document: 
+    theme: readable
+    toc: yes
+    toc_float: true
+---
+
+# Set seed
+
+```{r}
+library(splines)
+set.seed(3102)
+```
+
+# PART - 1
+## Prepare your function
+
+## Write your own function to use LOO-CV and GCV to select the optimal span for loess.
+
+```{r}
+lo.lev <- function(x1, sp){
+  # x1: n-by-1 feature vector
+  # sp: a numerical value for "span"
+  
+  n = length(x1);
+  lev = rep(0, n)
+  
+  ##############################################
+  # YOUR CODE: Compute the diagonal entries of the 
+  #            smoother matrix S and 
+  #            store it in a vector "lev"
+  # Tip: check how we compute the smoother matrix
+  #      for smoothing spline models
+  
+  for(i in 1:n){
+    y = rep(0, n); y[i]=1;
+    yi = loess(y ~ x1, span = sp)$fitted;
+    lev[i]= yi[i];
+  }
+  
+  ##############################################
+  
+  return(lev)
+}
+
+onestep_CV <- function(x1, y1, sp){
+  
+  ##############################################
+  #  YOUR CODE: 
+  #  1) Fit a loess model y1 ~ x1 with span = sp, and extract 
+  #     the corresponding residual vector
+  #  2) Call lo.lev to obtain the diagonal entries of S
+  #  3) Compute LOO-CV and GCV using formula from lecture notes
+  #    [lec_W5_NonlinearRegression.pdf] page 33. 
+  
+  n = length(x1)
+  err = y1 - loess(y1 ~ x1, span = sp)$fitted
+  sdiag = lo.lev(x1, sp)
+  
+  cv = sum((err/(1-sdiag))^2)/n
+  gcv = sum((err/(1-sum(sdiag)/n))^2)/n
+  ##############################################
+  
+  return(list(cv = cv, gcv = gcv))
+}
+
+myCV <- function(x1, y1, span){
+  # x1: feature vector of length n
+  # y1: response vector of length n
+  # span: a sequence of values for "span"
+  
+  m = length(span)
+  cv = rep(0, m)
+  gcv = rep(0, m)
+  
+  for(i in 1:m){
+    tmp = onestep_CV(x1, y1, span[i])
+    cv[i] = tmp$cv
+    gcv[i] = tmp$gcv
+  }
+  return(list(cv = cv, gcv = gcv))
+}
+```
+
+### Test your function
+
+```{r}
+mydata = read.csv(file = "Coding3_Data.csv")
+dim(mydata)
+plot(mydata$x, mydata$y, xlab="", ylab="")
+```
+
+
+### Create a grid of values for span: 15 values that are equally spaced between 0.20 and 0.90. Call your function myCV to compute the corresponding LOO-CV and GCV.
+
+```{r}
+span1 = seq(from = 0.2, by = 0.05, length = 15 )
+cv.out = myCV(mydata$x, mydata$y, span1)
+```
+
+## Print out your results
+```{r}
+myout = data.frame(CV = cv.out$cv, 
+                   GCV = cv.out$gcv, 
+                   span = span1)
+myout
+```
+```{r}
+myout$span[myout$GCV == min(myout$GCV)]
+```
+
+```{r}
+myout$span[myout$CV == min(myout$CV)]
+```
+
+## Plot the fitted curve
+### Plot the data (red circles), the true curve (gray) and the fitted curve (blue dashed line) using the optimal span.
+
+```{r}
+spangcv.min = 0.5
+plot(mydata$x, mydata$y, xlab="", ylab="", col="gray");
+fx = 1:50/50;
+fy = sin(12*(fx+0.2))/(fx+0.2)
+lines(fx, fy, col=8, lwd=2);
+f = loess(y ~ x, mydata, span = spangcv.min)
+lines(fx, predict(f, data.frame(x = fx), surface = "direct"), 
+      lty=2, lwd=2, col="blue")
+```
+
+# PART - 2
+
+## Load Data
+```{r}
+set.seed(3102) 
+mydata = read.csv("Sales_Transactions_Dataset_Weekly.csv")
+ts = as.matrix(mydata[, 2:53])
+row.names(ts) = mydata[,1]
+ts = ts - rowMeans(ts)
+```
+
+## Calculate B value
+
+```{r}
+
+x = seq(0, 1, length.out = ncol(ts))
+F = ns(x, df = 10, intercept = FALSE)
+F = t(t(F) - colMeans(F))
+B = solve(t(F) %*% F) %*% t(F) %*% t(ts)
+
+
+```
+
+## Clustering with B
+### Run k-means algorithm on the coefficient matrix B to cluster the 811 products into 6 clusters. Display time series for products in the same cluster in one figure along with the corresponding cluster center; arrange the 6 figures in 2-by-3 format.
+
+
+```{r}
+mykm1 = kmeans(t(B), 6)
+myK = 6
+mycenters1=mykm1$centers
+mycenters1_6clusters=F %*% t(mycenters1)
+par(mfrow=c(2,3))
+for(k in 1:myK){
+  id=which(mykm1$cluster==k)
+  plot(NA, xlim = c(1, ncol(ts)), ylim = range(ts), 
+       xlab = "Weeks", ylab = "Weekly Sales")
+  for(i in 1:length(id))
+    lines(1:ncol(ts), ts[id[i],] , col="gray")
+  lines(1:ncol(ts), mycenters1_6clusters[,k], col="red")
+}
+```
+
+## Clustering with X
+### Run k-means algorithm on the original time series matrix X to cluster the 811 products into 6 clusters. Display time series for products in the same cluster in one figure along with the corresponding cluster center; arrange the 6 figures in 2-by-3 format.
+
+```{r}
+mykm2 = kmeans(ts, 6)
+mycenters2 = t(mykm2$centers)
+myK = 6
+par(mfrow=c(2,3))
+for(k in 1:myK){
+  id=which(mykm2$cluster==k)
+  plot(NA, xlim = c(1, ncol(ts)), ylim = range(ts), 
+       xlab = "Weeks", ylab = "Weekly Sales")
+  for(i in 1:length(id))
+    lines(1:ncol(ts), ts[id[i],] , col="gray")
+  lines(1:ncol(ts), mycenters2[,k], col="red")
+}
+```
+
